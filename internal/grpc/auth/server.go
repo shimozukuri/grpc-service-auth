@@ -2,6 +2,9 @@ package auth
 
 import (
 	"context"
+	"errors"
+	"grpc-service/internal/services/auth"
+	"grpc-service/internal/storage"
 
 	grpcservicev1 "github.com/shimozukuri/grpc-service-protos/gen/go/grpc-service"
 	"google.golang.org/grpc"
@@ -48,6 +51,10 @@ func (s *serverAPI) Login(
 	token, err := s.auth.Login(ctx, req.GetEmail(), req.GetPassword(), int(req.GetAppId()))
 
 	if err != nil {
+		if errors.Is(err, auth.ErrInvalidCredentials) {
+			return nil, status.Error(codes.InvalidArgument, "invalid credentials")
+		}
+
 		return nil, status.Error(codes.Internal, "internal error")
 	}
 
@@ -66,6 +73,10 @@ func (s *serverAPI) Register(
 
 	userID, err := s.auth.RegisterNewUser(ctx, req.GetEmail(), req.GetPassword())
 	if err != nil {
+		if errors.Is(err, auth.ErrUserExists) {
+			return nil, status.Error(codes.AlreadyExists, "user already exists")
+		}
+
 		return nil, status.Error(codes.Internal, "internal error")
 	}
 
@@ -84,6 +95,10 @@ func (s *serverAPI) IsAdmin(
 
 	isAdmin, err := s.auth.IsAdmin(ctx, req.GetUserId())
 	if err != nil {
+		if errors.Is(err, storage.ErrUserNotFound) {
+			return nil, status.Error(codes.NotFound, "app not found")
+		}
+
 		return nil, status.Error(codes.Internal, "internal error")
 	}
 
