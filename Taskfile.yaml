@@ -1,0 +1,9 @@
+version: "3"
+
+tasks:
+  migrate:
+    aliases:
+      - mig
+    desc: "Run database migrations"
+    cmds:
+      - go run ./cmd/migrator --storage-path=./storage/grpc-service.db --migrations-path=./migrations
