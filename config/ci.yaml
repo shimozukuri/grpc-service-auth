@@ -1,0 +1,6 @@
+env: "dev"
+storage_path: "./storage/grpc-service.db"
+token_ttl: 1h
+grpc:
+  port: 44044
+  timeout: 60s
