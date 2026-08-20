@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"grpc-service/internal/services/auth"
-	"grpc-service/internal/storage"
 
 	grpcservicev1 "github.com/shimozukuri/grpc-service-protos/gen/go/grpc-service"
 	"google.golang.org/grpc"
@@ -95,8 +94,8 @@ func (s *serverAPI) IsAdmin(
 
 	isAdmin, err := s.auth.IsAdmin(ctx, req.GetUserId())
 	if err != nil {
-		if errors.Is(err, storage.ErrUserNotFound) {
-			return nil, status.Error(codes.NotFound, "app not found")
+		if errors.Is(err, auth.ErrUserNotFound) {
+			return nil, status.Error(codes.NotFound, "user not found")
 		}
 
 		return nil, status.Error(codes.Internal, "internal error")
