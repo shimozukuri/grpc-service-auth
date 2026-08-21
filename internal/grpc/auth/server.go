@@ -9,6 +9,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 type Auth interface {
@@ -24,6 +25,16 @@ type Auth interface {
 	IsAdmin(ctx context.Context,
 		userID int64,
 	) (bool, error)
+	GrantAdmin(ctx context.Context,
+		userID int64,
+	) error
+	RevokeAdmin(ctx context.Context,
+		userID int64,
+	) error
+}
+
+type AdminRequest interface {
+	GetUserId() int64
 }
 
 type serverAPI struct {
@@ -88,7 +99,7 @@ func (s *serverAPI) IsAdmin(
 	ctx context.Context,
 	req *grpcservicev1.IsAdminRequest,
 ) (*grpcservicev1.IsAdminResponse, error) {
-	if err := validateIsAdmin(req); err != nil {
+	if err := validateAdmin(req); err != nil {
 		return nil, err
 	}
 
@@ -104,6 +115,46 @@ func (s *serverAPI) IsAdmin(
 	return &grpcservicev1.IsAdminResponse{
 		IsAdmin: isAdmin,
 	}, nil
+}
+
+func (s *serverAPI) GrantAdmin(
+	ctx context.Context,
+	req *grpcservicev1.GrantAdminRequest,
+) (*emptypb.Empty, error) {
+	if err := validateAdmin(req); err != nil {
+		return nil, err
+	}
+
+	err := s.auth.GrantAdmin(ctx, req.GetUserId())
+	if err != nil {
+		if errors.Is(err, auth.ErrUserNotFound) {
+			return nil, status.Error(codes.NotFound, "user not found")
+		}
+
+		return nil, status.Error(codes.Internal, "internal error")
+	}
+
+	return &emptypb.Empty{}, nil
+}
+
+func (s *serverAPI) RevokeAdmin(
+	ctx context.Context,
+	req *grpcservicev1.RevokeAdminRequest,
+) (*emptypb.Empty, error) {
+	if err := validateAdmin(req); err != nil {
+		return nil, err
+	}
+
+	err := s.auth.RevokeAdmin(ctx, req.GetUserId())
+	if err != nil {
+		if errors.Is(err, auth.ErrUserNotFound) {
+			return nil, status.Error(codes.NotFound, "user not found")
+		}
+
+		return nil, status.Error(codes.Internal, "internal error")
+	}
+
+	return &emptypb.Empty{}, nil
 }
 
 func validateLogin(req *grpcservicev1.LoginRequest) error {
@@ -134,7 +185,7 @@ func validateRegister(req *grpcservicev1.RegisterRequest) error {
 	return nil
 }
 
-func validateIsAdmin(req *grpcservicev1.IsAdminRequest) error {
+func validateAdmin(req AdminRequest) error {
 	if req.GetUserId() == emptyValue {
 		return status.Error(codes.InvalidArgument, "user_id required")
 	}
