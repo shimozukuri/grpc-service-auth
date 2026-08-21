@@ -135,3 +135,43 @@ func (s *Storage) App(ctx context.Context, appID int) (models.App, error) {
 
 	return app, nil
 }
+
+func (s *Storage) GrantAdmin(ctx context.Context, userID int64) error {
+	const op = "storage.sqlite.GrantAdmin"
+
+	res, err := s.db.ExecContext(ctx, "UPDATE users SET is_admin = 1 WHERE id = ?", userID)
+	if err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+
+	if rows == 0 {
+		return storage.ErrUserNotFound
+	}
+
+	return nil
+}
+
+func (s *Storage) RevokeAdmin(ctx context.Context, userID int64) error {
+	const op = "storage.sqlite.GrantAdmin"
+
+	res, err := s.db.ExecContext(ctx, "UPDATE users SET is_admin = 0 WHERE id = ?", userID)
+	if err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+
+	if rows == 0 {
+		return storage.ErrUserNotFound
+	}
+
+	return nil
+}

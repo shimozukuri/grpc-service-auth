@@ -39,6 +39,14 @@ type UserProvider interface {
 		ctx context.Context,
 		userID int64,
 	) (bool, error)
+	GrantAdmin(
+		ctx context.Context,
+		userID int64,
+	) error
+	RevokeAdmin(
+		ctx context.Context,
+		userID int64,
+	) error
 }
 
 type AppProvider interface {
@@ -174,7 +182,7 @@ func (a *Auth) RegisterNewUser(
 	return id, nil
 }
 
-// IsAdmin checks if user is admin
+// IsAdmin checks if user is admin.
 func (a *Auth) IsAdmin(
 	ctx context.Context,
 	userID int64,
@@ -196,10 +204,76 @@ func (a *Auth) IsAdmin(
 
 			return false, fmt.Errorf("%s: %w", op, ErrUserNotFound)
 		}
+		log.Error("failed to check if user is admin", sl.Err(err))
+
 		return false, fmt.Errorf("%s: %w", op, err)
 	}
 
 	log.Info("checking if user is admin", slog.Bool("isAdmin", isAdmin))
 
 	return isAdmin, nil
+}
+
+// GrantAdmin grants administrator privileges to the specified user.
+func (a *Auth) GrantAdmin(
+	ctx context.Context,
+	userID int64,
+) error {
+	const op = "auth.GrantAdmin"
+
+	log := a.log.With(
+		slog.String("operation", op),
+		slog.String("userID", fmt.Sprint(userID)),
+	)
+
+	log.Info("set user is admin")
+
+	err := a.usrProvider.GrantAdmin(ctx, userID)
+	if err != nil {
+		if errors.Is(err, storage.ErrUserNotFound) {
+			log.Warn("user not found", sl.Err(err))
+
+			return fmt.Errorf("%s: %w", op, ErrUserNotFound)
+		}
+
+		log.Error("failed to set user", sl.Err(err))
+
+		return fmt.Errorf("%s: %w", op, err)
+	}
+
+	log.Info("user granted admin successfully")
+
+	return nil
+}
+
+// RevokeAdmin revokes administrator privileges from the specified user.
+func (a *Auth) RevokeAdmin(
+	ctx context.Context,
+	userID int64,
+) error {
+	const op = "auth.RevokeAdmin"
+
+	log := a.log.With(
+		slog.String("operation", op),
+		slog.String("userID", fmt.Sprint(userID)),
+	)
+
+	log.Info("unset user is admin")
+
+	err := a.usrProvider.RevokeAdmin(ctx, userID)
+	if err != nil {
+		if errors.Is(err, storage.ErrUserNotFound) {
+			log.Warn("user not found", sl.Err(err))
+
+			return fmt.Errorf("%s: %w", op, ErrUserNotFound)
+		}
+
+		log.Error("failed to unset user", sl.Err(err))
+
+		return fmt.Errorf("%s: %w", op, err)
+	}
+
+	log.Info("user revoke admin successfully")
+
+	return nil
 }
