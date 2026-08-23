@@ -23,7 +23,7 @@ const (
 	passDefaultLen = 10
 )
 
-func TestRegisterLoginIsAdmin_Login_HappyPath(t *testing.T) {
+func TestAuth_HappyPath(t *testing.T) {
 	ctx, st := suite.New(t)
 
 	email := gofakeit.Email()
@@ -34,7 +34,9 @@ func TestRegisterLoginIsAdmin_Login_HappyPath(t *testing.T) {
 		Password: pass,
 	})
 	require.NoError(t, err)
-	assert.NotEmpty(t, respReg.GetUserId())
+	require.NotEmpty(t, respReg.GetUserId())
+
+	userID := respReg.GetUserId()
 
 	respLogin, err := st.AuthClient.Login(ctx, &grpcservicev1.LoginRequest{
 		Email:    email,
@@ -55,18 +57,39 @@ func TestRegisterLoginIsAdmin_Login_HappyPath(t *testing.T) {
 	require.True(t, tokenParsed.Valid)
 
 	claims, ok := tokenParsed.Claims.(jwt.MapClaims)
-	assert.True(t, ok)
+	require.True(t, ok)
 
-	assert.Equal(t, respReg.GetUserId(), int64(claims["uid"].(float64)))
+	assert.Equal(t, userID, int64(claims["uid"].(float64)))
 	assert.Equal(t, email, claims["email"].(string))
 	assert.Equal(t, appID, int(claims["app_id"].(float64)))
 
 	const deltaSeconds = 1
 
-	assert.InDelta(t, loginTime.Add(st.Cfg.TokenTTL).Unix(), claims["exp"].(float64), deltaSeconds)
+	assert.InDelta(
+		t,
+		loginTime.Add(st.Cfg.TokenTTL).Unix(),
+		claims["exp"].(float64),
+		deltaSeconds,
+	)
+
+	_, err = st.AuthClient.GrantAdmin(ctx, &grpcservicev1.GrantAdminRequest{
+		UserId: userID,
+	})
+	require.NoError(t, err)
 
 	respIsAdm, err := st.AuthClient.IsAdmin(ctx, &grpcservicev1.IsAdminRequest{
-		UserId: respReg.GetUserId(),
+		UserId: userID,
+	})
+	require.NoError(t, err)
+	assert.True(t, respIsAdm.IsAdmin)
+
+	_, err = st.AuthClient.RevokeAdmin(ctx, &grpcservicev1.RevokeAdminRequest{
+		UserId: userID,
+	})
+	require.NoError(t, err)
+
+	respIsAdm, err = st.AuthClient.IsAdmin(ctx, &grpcservicev1.IsAdminRequest{
+		UserId: userID,
 	})
 	require.NoError(t, err)
 	assert.False(t, respIsAdm.IsAdmin)
@@ -83,7 +106,7 @@ func TestRegister_DuplicateRegister(t *testing.T) {
 		Password: pass,
 	})
 	require.NoError(t, err)
-	assert.NotEmpty(t, respReg.GetUserId())
+	require.NotEmpty(t, respReg.GetUserId())
 
 	respReg, err = st.AuthClient.Register(ctx, &grpcservicev1.RegisterRequest{
 		Email:    email,
@@ -92,37 +115,41 @@ func TestRegister_DuplicateRegister(t *testing.T) {
 	require.Error(t, err)
 	require.Empty(t, respReg.GetUserId())
 
-	strErr, ok := status.FromError(err)
+	statusErr, ok := status.FromError(err)
 	require.True(t, ok)
 
-	assert.Equal(t, codes.AlreadyExists, strErr.Code())
-	assert.Equal(t, "user already exists", strErr.Message())
+	assert.Equal(t, codes.AlreadyExists, statusErr.Code())
+	assert.Equal(t, "user already exists", statusErr.Message())
 }
 
 func TestRegister_FailCases(t *testing.T) {
 	testCases := []struct {
-		name      string
-		email     string
-		password  string
-		expectErr error
+		name            string
+		email           string
+		password        string
+		expectedCode    codes.Code
+		expectedMessage string
 	}{
 		{
-			name:      "empty password",
-			email:     gofakeit.Email(),
-			password:  "",
-			expectErr: status.Error(codes.InvalidArgument, "password required"),
+			name:            "empty password",
+			email:           gofakeit.Email(),
+			password:        "",
+			expectedCode:    codes.InvalidArgument,
+			expectedMessage: "password required",
 		},
 		{
-			name:      "empty email",
-			email:     "",
-			password:  randomFakePassword(),
-			expectErr: status.Error(codes.InvalidArgument, "email required"),
+			name:            "empty email",
+			email:           "",
+			password:        randomFakePassword(),
+			expectedCode:    codes.InvalidArgument,
+			expectedMessage: "email required",
 		},
 		{
-			name:      "empty both",
-			email:     "",
-			password:  "",
-			expectErr: status.Error(codes.InvalidArgument, "email required"),
+			name:            "empty request",
+			email:           "",
+			password:        "",
+			expectedCode:    codes.InvalidArgument,
+			expectedMessage: "email required",
 		},
 	}
 
@@ -137,73 +164,63 @@ func TestRegister_FailCases(t *testing.T) {
 			require.Error(t, err)
 			require.Empty(t, respReg.GetUserId())
 
-			strErr, ok := status.FromError(err)
+			statusErr, ok := status.FromError(err)
 			require.True(t, ok)
 
-			expected, _ := status.FromError(tc.expectErr)
-
-			assert.Equal(t, expected.Code(), strErr.Code())
-			assert.Equal(t, expected.Message(), strErr.Message())
+			assert.Equal(t, tc.expectedCode, statusErr.Code())
+			assert.Equal(t, tc.expectedMessage, statusErr.Message())
 		})
 	}
 }
 
-func TestRegister_EmptyRequest(t *testing.T) {
-	ctx, st := suite.New(t)
-
-	respReg, err := st.AuthClient.Register(ctx, &grpcservicev1.RegisterRequest{})
-	require.Error(t, err)
-	require.Empty(t, respReg.GetUserId())
-
-	strErr, ok := status.FromError(err)
-	require.True(t, ok)
-
-	assert.Equal(t, codes.InvalidArgument, strErr.Code())
-	assert.Equal(t, "email required", strErr.Message())
-}
-
 func TestLogin_FailCases(t *testing.T) {
 	testCases := []struct {
-		name      string
-		email     string
-		password  string
-		appID     int32
-		expectErr error
+		name            string
+		email           string
+		password        string
+		appID           int32
+		expectedCode    codes.Code
+		expectedMessage string
 	}{
 		{
-			name:      "empty password",
-			email:     gofakeit.Email(),
-			password:  "",
-			appID:     appID,
-			expectErr: status.Error(codes.InvalidArgument, "password required"),
+			name:            "empty password",
+			email:           gofakeit.Email(),
+			password:        "",
+			appID:           appID,
+			expectedCode:    codes.InvalidArgument,
+			expectedMessage: "password required",
 		},
 		{
-			name:      "empty email",
-			email:     "",
-			password:  randomFakePassword(),
-			appID:     appID,
-			expectErr: status.Error(codes.InvalidArgument, "email required"),
+			name:            "empty email",
+			email:           "",
+			password:        randomFakePassword(),
+			appID:           appID,
+			expectedCode:    codes.InvalidArgument,
+			expectedMessage: "email required",
 		},
 		{
-			name:      "empty appID",
-			email:     gofakeit.Email(),
-			password:  randomFakePassword(),
-			appID:     emptyID,
-			expectErr: status.Error(codes.InvalidArgument, "app_id required"),
+			name:            "empty appID",
+			email:           gofakeit.Email(),
+			password:        randomFakePassword(),
+			appID:           emptyID,
+			expectedCode:    codes.InvalidArgument,
+			expectedMessage: "app_id required",
 		},
 		{
-			name:      "empty all",
-			email:     "",
-			password:  "",
-			appID:     emptyID,
-			expectErr: status.Error(codes.InvalidArgument, "email required"),
+			name:            "empty request",
+			email:           "",
+			password:        "",
+			appID:           emptyID,
+			expectedCode:    codes.InvalidArgument,
+			expectedMessage: "email required",
 		},
 		{
-			name:      "invalid credentials",
-			email:     gofakeit.Email(),
-			password:  randomFakePassword(),
-			appID:     appID,
-			expectErr: status.Error(codes.InvalidArgument, "invalid credentials"),
+			name:            "invalid credentials",
+			email:           gofakeit.Email(),
+			password:        randomFakePassword(),
+			appID:           appID,
+			expectedCode:    codes.InvalidArgument,
+			expectedMessage: "invalid credentials",
 		},
 	}
 
@@ -219,29 +236,13 @@ func TestLogin_FailCases(t *testing.T) {
 			require.Error(t, err)
 			require.Empty(t, respLogin.GetToken())
 
-			strErr, ok := status.FromError(err)
+			statusErr, ok := status.FromError(err)
 			require.True(t, ok)
 
-			expected, _ := status.FromError(tc.expectErr)
-
-			assert.Equal(t, expected.Code(), strErr.Code())
-			assert.Equal(t, expected.Message(), strErr.Message())
+			assert.Equal(t, tc.expectedCode, statusErr.Code())
+			assert.Equal(t, tc.expectedMessage, statusErr.Message())
 		})
 	}
-}
-
-func TestLogin_EmptyRequest(t *testing.T) {
-	ctx, st := suite.New(t)
-
-	respLogin, err := st.AuthClient.Login(ctx, &grpcservicev1.LoginRequest{})
-	require.Error(t, err)
-	require.Empty(t, respLogin.GetToken())
-
-	strErr, ok := status.FromError(err)
-	require.True(t, ok)
-
-	assert.Equal(t, codes.InvalidArgument, strErr.Code())
-	assert.Equal(t, "email required", strErr.Message())
 }
 
 func TestRegisterLogin_Login_InvalidPassword(t *testing.T) {
@@ -263,11 +264,11 @@ func TestRegisterLogin_Login_InvalidPassword(t *testing.T) {
 	require.Error(t, err)
 	require.Empty(t, respLogin.GetToken())
 
-	strErr, ok := status.FromError(err)
+	statusErr, ok := status.FromError(err)
 	require.True(t, ok)
 
-	assert.Equal(t, codes.InvalidArgument, strErr.Code())
-	assert.Contains(t, "invalid credentials", strErr.Message())
+	assert.Equal(t, codes.InvalidArgument, statusErr.Code())
+	assert.Contains(t, statusErr.Message(), "invalid credentials")
 }
 
 func TestRegisterLogin_Login_InvalidApp(t *testing.T) {
@@ -275,6 +276,7 @@ func TestRegisterLogin_Login_InvalidApp(t *testing.T) {
 
 	email := gofakeit.Email()
 	pass := randomFakePassword()
+
 	_, err := st.AuthClient.Register(ctx, &grpcservicev1.RegisterRequest{
 		Email:    email,
 		Password: pass,
@@ -289,11 +291,11 @@ func TestRegisterLogin_Login_InvalidApp(t *testing.T) {
 	require.Error(t, err)
 	require.Empty(t, respLogin.GetToken())
 
-	strErr, ok := status.FromError(err)
+	statusErr, ok := status.FromError(err)
 	require.True(t, ok)
 
-	assert.Equal(t, codes.InvalidArgument, strErr.Code())
-	assert.Equal(t, "invalid credentials", strErr.Message())
+	assert.Equal(t, codes.InvalidArgument, statusErr.Code())
+	assert.Equal(t, "invalid credentials", statusErr.Message())
 }
 
 func TestRegisterLogin_Login_TokenInvalidWithWrongSecret(t *testing.T) {
@@ -314,6 +316,7 @@ func TestRegisterLogin_Login_TokenInvalidWithWrongSecret(t *testing.T) {
 		AppId:    appID,
 	})
 	require.NoError(t, err)
+	require.NotEmpty(t, respLogin.GetToken())
 
 	_, err = jwt.Parse(respLogin.GetToken(), func(token *jwt.Token) (interface{}, error) {
 		return []byte("wrong-secret"), nil
@@ -332,14 +335,40 @@ func TestRegisterIsAdmin_IsAdmin_UserNotIsAdmin(t *testing.T) {
 		Password: pass,
 	})
 	require.NoError(t, err)
-
-	userId := respReg.GetUserId()
+	require.NotEmpty(t, respReg.GetUserId())
 
 	respIsAdm, err := st.AuthClient.IsAdmin(ctx, &grpcservicev1.IsAdminRequest{
-		UserId: userId,
+		UserId: respReg.GetUserId(),
 	})
 	require.NoError(t, err)
 	require.False(t, respIsAdm.GetIsAdmin())
+}
+
+func TestRegisterGrantAdminIsAdmin_IsAdmin_UserIsAdmin(t *testing.T) {
+	ctx, st := suite.New(t)
+
+	email := gofakeit.Email()
+	pass := randomFakePassword()
+
+	respReg, err := st.AuthClient.Register(ctx, &grpcservicev1.RegisterRequest{
+		Email:    email,
+		Password: pass,
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, respReg.GetUserId())
+
+	userID := respReg.GetUserId()
+
+	_, err = st.AuthClient.GrantAdmin(ctx, &grpcservicev1.GrantAdminRequest{
+		UserId: userID,
+	})
+	require.NoError(t, err)
+
+	respIsAdm, err := st.AuthClient.IsAdmin(ctx, &grpcservicev1.IsAdminRequest{
+		UserId: userID,
+	})
+	require.NoError(t, err)
+	require.True(t, respIsAdm.GetIsAdmin())
 }
 
 func TestIsAdmin_EmptyUserId(t *testing.T) {
@@ -351,25 +380,11 @@ func TestIsAdmin_EmptyUserId(t *testing.T) {
 	require.Error(t, err)
 	require.Empty(t, respIsAdm.GetIsAdmin())
 
-	strErr, ok := status.FromError(err)
+	statusErr, ok := status.FromError(err)
 	require.True(t, ok)
 
-	assert.Equal(t, codes.InvalidArgument, strErr.Code())
-	assert.Equal(t, "user_id required", strErr.Message())
-}
-
-func TestIsAdmin_EmptyRequest(t *testing.T) {
-	ctx, st := suite.New(t)
-
-	respIsAdm, err := st.AuthClient.IsAdmin(ctx, &grpcservicev1.IsAdminRequest{})
-	require.Error(t, err)
-	require.Empty(t, respIsAdm.GetIsAdmin())
-
-	strErr, ok := status.FromError(err)
-	require.True(t, ok)
-
-	assert.Equal(t, codes.InvalidArgument, strErr.Code())
-	assert.Equal(t, "user_id required", strErr.Message())
+	assert.Equal(t, codes.InvalidArgument, statusErr.Code())
+	assert.Equal(t, "user_id required", statusErr.Message())
 }
 
 func TestIsAdmin_UserNotFound(t *testing.T) {
@@ -380,20 +395,99 @@ func TestIsAdmin_UserNotFound(t *testing.T) {
 		Password: randomFakePassword(),
 	})
 	require.NoError(t, err)
+	require.NotEmpty(t, respReg.GetUserId())
 
-	userId := respReg.GetUserId() + 1
+	userID := respReg.GetUserId() + 1
 
 	respIsAdm, err := st.AuthClient.IsAdmin(ctx, &grpcservicev1.IsAdminRequest{
-		UserId: userId,
+		UserId: userID,
 	})
 	require.Error(t, err)
 	require.Empty(t, respIsAdm.GetIsAdmin())
 
-	strErr, ok := status.FromError(err)
+	statusErr, ok := status.FromError(err)
 	require.True(t, ok)
 
-	assert.Equal(t, codes.NotFound, strErr.Code())
-	assert.Equal(t, "user not found", strErr.Message())
+	assert.Equal(t, codes.NotFound, statusErr.Code())
+	assert.Equal(t, "user not found", statusErr.Message())
+}
+
+func TestGrantAdmin_UserNotFound(t *testing.T) {
+	ctx, st := suite.New(t)
+
+	respReg, err := st.AuthClient.Register(ctx, &grpcservicev1.RegisterRequest{
+		Email:    gofakeit.Email(),
+		Password: randomFakePassword(),
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, respReg.GetUserId())
+
+	userID := respReg.GetUserId() + 1
+
+	_, err = st.AuthClient.GrantAdmin(ctx, &grpcservicev1.GrantAdminRequest{
+		UserId: userID,
+	})
+	require.Error(t, err)
+
+	statusErr, ok := status.FromError(err)
+	require.True(t, ok)
+
+	assert.Equal(t, codes.NotFound, statusErr.Code())
+	assert.Equal(t, "user not found", statusErr.Message())
+}
+
+func TestGrantAdmin_EmptyUserId(t *testing.T) {
+	ctx, st := suite.New(t)
+
+	_, err := st.AuthClient.GrantAdmin(ctx, &grpcservicev1.GrantAdminRequest{
+		UserId: emptyID,
+	})
+	require.Error(t, err)
+
+	statusErr, ok := status.FromError(err)
+	require.True(t, ok)
+
+	assert.Equal(t, codes.InvalidArgument, statusErr.Code())
+	assert.Equal(t, "user_id required", statusErr.Message())
+}
+
+func TestRevokeAdmin_UserNotFound(t *testing.T) {
+	ctx, st := suite.New(t)
+
+	respReg, err := st.AuthClient.Register(ctx, &grpcservicev1.RegisterRequest{
+		Email:    gofakeit.Email(),
+		Password: randomFakePassword(),
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, respReg.GetUserId())
+
+	userID := respReg.GetUserId() + 1
+
+	_, err = st.AuthClient.RevokeAdmin(ctx, &grpcservicev1.RevokeAdminRequest{
+		UserId: userID,
+	})
+	require.Error(t, err)
+
+	statusErr, ok := status.FromError(err)
+	require.True(t, ok)
+
+	assert.Equal(t, codes.NotFound, statusErr.Code())
+	assert.Equal(t, "user not found", statusErr.Message())
+}
+
+func TestRevokeAdmin_EmptyUserId(t *testing.T) {
+	ctx, st := suite.New(t)
+
+	_, err := st.AuthClient.RevokeAdmin(ctx, &grpcservicev1.RevokeAdminRequest{
+		UserId: emptyID,
+	})
+	require.Error(t, err)
+
+	statusErr, ok := status.FromError(err)
+	require.True(t, ok)
+
+	assert.Equal(t, codes.InvalidArgument, statusErr.Code())
+	assert.Equal(t, "user_id required", statusErr.Message())
 }
 
 func randomFakePassword() string {

@@ -22,6 +22,7 @@ type Auth struct {
 	tokenTTL    time.Duration
 }
 
+//go:generate go run github.com/vektra/mockery/v2@v2.53.6 --name=UserSaver
 type UserSaver interface {
 	SaveUser(
 		ctx context.Context,
@@ -30,6 +31,7 @@ type UserSaver interface {
 	) (uid int64, err error)
 }
 
+//go:generate go run github.com/vektra/mockery/v2@v2.53.6 --name=UserProvider
 type UserProvider interface {
 	User(
 		ctx context.Context,
@@ -49,6 +51,7 @@ type UserProvider interface {
 	) error
 }
 
+//go:generate go run github.com/vektra/mockery/v2@v2.53.6 --name=AppProvider
 type AppProvider interface {
 	App(
 		ctx context.Context,
