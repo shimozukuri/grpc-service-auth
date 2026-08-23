@@ -36,6 +36,8 @@ github.com/shimozukuri/grpc-service-protos v0.0.3 h1:RvrCGiaLY53MVa+qvs/03w+qqlx
 github.com/shimozukuri/grpc-service-protos v0.0.3/go.mod h1:isJmWUWtCvW3zvjCt3rj6x9hBY+S6azKbICgWUYcxis=
 github.com/shimozukuri/grpc-service-protos v0.0.4 h1:FMQxbFUxdOOkXpFUEOc1fs9Zj2Wvvb3fjh2LnNpPKIw=
 github.com/shimozukuri/grpc-service-protos v0.0.4/go.mod h1:isJmWUWtCvW3zvjCt3rj6x9hBY+S6azKbICgWUYcxis=
+github.com/stretchr/objx v0.5.3 h1:jmXUvGomnU1o3W/V5h2VEradbpJDwGrzugQQvL0POH4=
+github.com/stretchr/objx v0.5.3/go.mod h1:rDQraq+vQZU7Fde9LOZLr8Tax6zZvy4kuNKF+QYS+U0=
 github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWDWE=
 github.com/stretchr/testify v1.12.1/go.mod h1:MDEgiDPPsNp5cuIrHPPCyornHKgEVbtFUmoNlxoYthg=
 go.opentelemetry.io/auto/sdk v1.2.1 h1:jXsnJ4Lmnqd11kwkBV2LgLoFMZKizbCi5fNZ/ipaZ64=
