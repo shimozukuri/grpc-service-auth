@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/brianvoe/gofakeit/v6"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/bcrypt"
@@ -44,27 +43,27 @@ func TestAuth_RegisterNewUser(t *testing.T) {
 	}{
 		{
 			name:     "success",
-			email:    gofakeit.Email(),
-			password: randomFakePassword(),
+			email:    "test@gmail.com",
+			password: "test_password",
 		},
 		{
 			name:     "user exists",
-			email:    gofakeit.Email(),
-			password: randomFakePassword(),
+			email:    "test@gmail.com",
+			password: "test_password",
 			respErr:  auth.ErrUserExists,
 			mockErr:  storage.ErrUserExists,
 		},
 		{
 			name:     "hash password error",
-			email:    gofakeit.Email(),
+			email:    "test@gmail.com",
 			password: strings.Repeat("a", 73),
 			respErr:  bcrypt.ErrPasswordTooLong,
 			skipSave: true,
 		},
 		{
 			name:     "save user error",
-			email:    gofakeit.Email(),
-			password: randomFakePassword(),
+			email:    "test@gmail.com",
+			password: "test_password",
 			respErr:  saveErr,
 			mockErr:  saveErr,
 		},
@@ -113,8 +112,8 @@ func TestAuth_Login(t *testing.T) {
 	userErr := errors.New("failed to get user")
 	appErr := errors.New("failed to get app")
 
-	email := gofakeit.Email()
-	password := randomFakePassword()
+	email := "test@gmail.com"
+	password := "test_password"
 
 	passHash, err := bcrypt.GenerateFromPassword(
 		[]byte(password),
@@ -436,15 +435,4 @@ func newAuth(t *testing.T) (*auth.Auth, authMocks) {
 	)
 
 	return a, m
-}
-
-func randomFakePassword() string {
-	return gofakeit.Password(
-		true,
-		true,
-		true,
-		true,
-		true,
-		passDefaultLen,
-	)
 }
